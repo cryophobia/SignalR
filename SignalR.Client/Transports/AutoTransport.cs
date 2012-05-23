@@ -46,7 +46,7 @@ namespace SignalR.Client.Transports
                 {
                     // Make sure we observe the exception
                     var ex = task.Exception;
-#if !WINDOWS_PHONE && !SILVERLIGHT && !NETFX_CORE
+#if !WINDOWS_PHONE && !SILVERLIGHT && !NETFX_CORE && !MONOTOUCH && !__ANDROID__
                     Trace.TraceError("SignalR exception thrown by Task: {0}", ex);
 #endif
                     Debug.WriteLine("Auto: Failed to connect to using transport {0}", (object)transport.GetType().Name);

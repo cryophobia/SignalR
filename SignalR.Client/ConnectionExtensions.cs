@@ -15,7 +15,7 @@ namespace SignalR.Client
 
             return default(T);
         }
-#if !WINDOWS_PHONE && !SILVERLIGHT
+#if !WINDOWS_PHONE && !SILVERLIGHT && !MONOTOUCH && !__ANDROID__
         public static IObservable<string> AsObservable(this IConnection connection)
         {
             return connection.AsObservable(value => value);
