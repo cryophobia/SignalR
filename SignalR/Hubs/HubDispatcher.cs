@@ -6,8 +6,6 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
-using SignalR.Hosting;
 
 namespace SignalR.Hubs
 {
@@ -18,6 +16,7 @@ namespace SignalR.Hubs
     {
         private IJavaScriptProxyGenerator _proxyGenerator;
         private IHubManager _manager;
+        private IHubRequestParser _requestParser;
         private IParameterResolver _binder;
         private readonly List<HubDescriptor> _hubs = new List<HubDescriptor>();
         private bool _isDebuggingEnabled;
@@ -38,6 +37,7 @@ namespace SignalR.Hubs
             _proxyGenerator = resolver.Resolve<IJavaScriptProxyGenerator>();
             _manager = resolver.Resolve<IHubManager>();
             _binder = resolver.Resolve<IParameterResolver>();
+            _requestParser = resolver.Resolve<IHubRequestParser>();
 
             base.Initialize(resolver);
         }
@@ -47,12 +47,12 @@ namespace SignalR.Hubs
         /// </summary>
         protected override Task OnReceivedAsync(IRequest request, string connectionId, string data)
         {
-            var hubRequest = HubRequest.Parse(data);
+            HubRequest hubRequest = _requestParser.Parse(data);
 
             // Create the hub
             HubDescriptor descriptor = _manager.EnsureHub(hubRequest.Hub);
 
-            JToken[] parameterValues = hubRequest.ParameterValues;
+            IJsonValue[] parameterValues = hubRequest.ParameterValues;
 
             // Resolve the method
             MethodDescriptor methodDescriptor = _manager.GetHubMethod(descriptor.Name, hubRequest.Method, parameterValues);
@@ -78,7 +78,7 @@ namespace SignalR.Hubs
                     var task = (Task)result;
                     if (!returnType.IsGenericType)
                     {
-                        return task.ContinueWith(t => ProcessResult(state, null, hubRequest, t.Exception))
+                        return task.ContinueWith(t => ProcessResponse(state, null, hubRequest, t.Exception))
                                    .FastUnwrap();
                     }
                     else
@@ -107,12 +107,12 @@ namespace SignalR.Hubs
                 }
                 else
                 {
-                    resultTask = ProcessResult(state, result, hubRequest, null);
+                    resultTask = ProcessResponse(state, result, hubRequest, null);
                 }
             }
             catch (TargetInvocationException e)
             {
-                resultTask = ProcessResult(state, null, hubRequest, e);
+                resultTask = ProcessResponse(state, null, hubRequest, e);
             }
 
             return resultTask
@@ -194,7 +194,6 @@ namespace SignalR.Hubs
                     state = state ?? new TrackingDictionary();
                     hub.Context = new HubCallerContext(request, connectionId);
                     hub.Caller = new StatefulSignalAgent(Connection, connectionId, descriptor.Name, state);
-                    var groupManager = new GroupManager(Connection, descriptor.Name);
                     hub.Clients = new ClientAgent(Connection, descriptor.Name);
                     hub.Groups = new GroupManager(Connection, descriptor.Name);
                 }
@@ -225,18 +224,18 @@ namespace SignalR.Hubs
         {
             if (task.IsFaulted)
             {
-                return ProcessResult(state, null, request, task.Exception);
+                return ProcessResponse(state, null, request, task.Exception);
             }
-            return ProcessResult(state, task.Result, request, null);
+            return ProcessResponse(state, task.Result, request, null);
         }
 
-        private Task ProcessResult(TrackingDictionary state, object result, HubRequest request, Exception error)
+        private Task ProcessResponse(TrackingDictionary state, object result, HubRequest request, Exception error)
         {
             var exception = error.Unwrap();
             string stackTrace = (exception != null && _isDebuggingEnabled) ? exception.StackTrace : null;
             string errorMessage = exception != null ? exception.Message : null;
 
-            var hubResult = new HubResult
+            var hubResult = new HubResponse
             {
                 State = state.GetChanges(),
                 Result = result,
@@ -302,47 +301,6 @@ namespace SignalR.Hubs
             {
                 return Name + "." + unqualifiedName;
             }
-        }
-
-        private class HubResult
-        {
-            public IDictionary<string, object> State { get; set; }
-            public object Result { get; set; }
-            public string Id { get; set; }
-            public string Error { get; set; }
-            public string StackTrace { get; set; }
-        }
-
-        private class HubRequest
-        {
-            private static readonly JToken[] _emptyArgs = new JToken[0];
-
-            public static HubRequest Parse(string data)
-            {
-                var rawRequest = JObject.Parse(data);
-                var request = new HubRequest();
-
-                // TODO: Figure out case insensitivity in JObject.Parse, this should cover our clients for now
-                request.Hub = rawRequest.Value<string>("hub") ?? rawRequest.Value<string>("Hub");
-                request.Method = rawRequest.Value<string>("method") ?? rawRequest.Value<string>("Method");
-                request.Id = rawRequest.Value<string>("id") ?? rawRequest.Value<string>("Id");
-
-                var rawState = rawRequest["state"] ?? rawRequest["State"];
-                request.State = rawState == null ? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) :
-                                           rawState.ToObject<IDictionary<string, object>>();
-
-                var rawArgs = rawRequest["args"] ?? rawRequest["Args"];
-                request.ParameterValues = rawArgs == null ? _emptyArgs :
-                                                    rawArgs.Children().ToArray();
-
-                return request;
-            }
-
-            public string Hub { get; set; }
-            public string Method { get; set; }
-            public JToken[] ParameterValues { get; set; }
-            public IDictionary<string, object> State { get; set; }
-            public string Id { get; set; }
         }
     }
 }

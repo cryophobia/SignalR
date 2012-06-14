@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using SignalR.Hosting;
 
 namespace SignalR.Transports
 {
@@ -26,14 +25,6 @@ namespace SignalR.Transports
             : base(context, resolver)
         {
             _isDebug = context.IsDebuggingEnabled();
-        }
-
-        protected override bool IsConnectRequest
-        {
-            get
-            {
-                return Context.Request.Url.LocalPath.EndsWith("/connect", StringComparison.OrdinalIgnoreCase);
-            }
         }
 
         public override void KeepAlive()

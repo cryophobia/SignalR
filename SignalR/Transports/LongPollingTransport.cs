@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using SignalR.Hosting;
 using SignalR.Infrastructure;
 
 namespace SignalR.Transports
@@ -20,7 +19,7 @@ namespace SignalR.Transports
         }
 
         public LongPollingTransport(HostContext context, IJsonSerializer jsonSerializer, ITransportHeartBeat heartBeat)
-            : base(context, heartBeat)
+            : base(context, jsonSerializer, heartBeat)
         {
             _jsonSerializer = jsonSerializer;
         }
@@ -44,27 +43,7 @@ namespace SignalR.Transports
             get { return TimeSpan.FromMilliseconds(LongPollDelay); }
         }
 
-        public IEnumerable<string> Groups
-        {
-            get
-            {
-                if (IsConnectRequest)
-                {
-                    return Enumerable.Empty<string>();
-                }
-
-                string groupValue = Context.Request.QueryString["groups"];
-
-                if (String.IsNullOrEmpty(groupValue))
-                {
-                    return Enumerable.Empty<string>();
-                }
-
-                return _jsonSerializer.Parse<string[]>(groupValue);
-            }
-        }
-
-        private bool IsConnectRequest
+        protected override bool IsConnectRequest
         {
             get
             {
@@ -120,8 +99,6 @@ namespace SignalR.Transports
 
         public Func<Task> Reconnected { get; set; }
 
-        public override Func<Task> Disconnected { get; set; }
-
         public Func<Exception, Task> Error { get; set; }
 
         public Task ProcessRequest(ITransportConnection connection)
@@ -131,6 +108,10 @@ namespace SignalR.Transports
             if (IsSendRequest)
             {
                 return ProcessSendRequest();
+            }
+            else if (IsAbortRequest)
+            {
+                return Connection.Abort();
             }
             else
             {
@@ -164,7 +145,7 @@ namespace SignalR.Transports
         public virtual Task Send(object value)
         {
             var payload = _jsonSerializer.Stringify(value);
-            
+
             if (IsJsonp)
             {
                 payload = Json.CreateJsonpCallback(JsonpCallback, payload);
@@ -229,7 +210,16 @@ namespace SignalR.Transports
                 postReceive();
             }
 
-            return receiveTask.Then(response => Send(response));
+            return receiveTask.Then(response =>
+            {
+                if (response.Aborted)
+                {
+                    // If this was a clean disconnect then raise the event
+                    OnDisconnect();
+                }
+
+                return Send(response);
+            });
         }
 
         private PersistentResponse AddTransportData(PersistentResponse response)

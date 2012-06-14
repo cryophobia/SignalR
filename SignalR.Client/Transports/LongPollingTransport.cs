@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using SignalR.Client.Http;
+using SignalR.Client.Infrastructure;
 
 namespace SignalR.Client.Transports
 {
@@ -44,6 +45,8 @@ namespace SignalR.Client.Transports
             else if (raiseReconnect)
             {
                 url += "reconnect";
+
+                connection.State = ConnectionState.Reconnecting;
             }
 
             url += GetReceiveQueryString(connection, data);
@@ -96,22 +99,19 @@ namespace SignalR.Client.Transports
                             shouldRaiseReconnect = true;
 
                             // Get the underlying exception
-                            Exception exception = task.Exception.GetBaseException();
+                            Exception exception = task.Exception.Unwrap();
 
                             // If the error callback isn't null then raise it and don't continue polling
                             if (errorCallback != null && 
                                 Interlocked.Exchange(ref callbackFired, 1) == 0)
                             {
-                                // Raise on error
-                                connection.OnError(exception);
-
                                 // Call the callback
                                 errorCallback(exception);
                             }
                             else
                             {
                                 // Figure out if the request was aborted
-                                requestAborted = IsRequestAborted(exception);
+                                requestAborted = ExceptionHelper.IsRequestAborted(exception);
 
                                 // Sometimes a connection might have been closed by the server before we get to write anything
                                 // so just try again and don't raise OnError.
@@ -124,7 +124,7 @@ namespace SignalR.Client.Transports
                                     // before polling again so we aren't hammering the server 
                                     TaskAsyncHelper.Delay(_errorDelay).Then(() =>
                                     {
-                                        if (connection.IsActive)
+                                        if (!CancellationToken.IsCancellationRequested)
                                         {
                                             PollingLoop(connection,
                                                 data,
@@ -138,7 +138,7 @@ namespace SignalR.Client.Transports
                         }
                         else
                         {
-                            if (connection.IsActive)
+                            if (!CancellationToken.IsCancellationRequested)
                             {
                                 // Continue polling if there was no error
                                 PollingLoop(connection,
@@ -179,6 +179,9 @@ namespace SignalR.Client.Transports
             {
                 if (Interlocked.Exchange(ref reconnectedFired, 1) == 0)
                 {
+                    // Mark the connection as connected
+                    connection.State = ConnectionState.Connected;
+
                     connection.OnReconnected();
                 }
             }

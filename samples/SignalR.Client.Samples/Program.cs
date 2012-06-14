@@ -10,13 +10,13 @@ namespace SignalR.Client.Samples
     {
         static void Main(string[] args)
         {
-            RunInMemoryHost();
+            // RunInMemoryHost();
 
             // var hubConnection = new HubConnection("http://localhost:40476/");
 
             //RunDemoHub(hubConnection);
 
-            //RunStreamingSample();
+            RunStreamingSample();
 
             Console.ReadKey();
         }
@@ -79,7 +79,7 @@ namespace SignalR.Client.Samples
 
         private static void RunStreamingSample()
         {
-            var connection = new Connection("http://localhost:40476/Raw/raw");
+            var connection = new Connection("http://localhost:40476/streaming/streaming");
 
             connection.Received += data =>
             {
@@ -89,6 +89,11 @@ namespace SignalR.Client.Samples
             connection.Reconnected += () =>
             {
                 Console.WriteLine("[{0}]: Connection restablished", DateTime.Now);
+            };
+
+            connection.StateChanged += change =>
+            {
+                Console.WriteLine("{0} => {1}", change.OldState, change.NewState);
             };
 
             connection.Error += e =>
@@ -101,19 +106,19 @@ namespace SignalR.Client.Samples
 
         public class MyConnection : PersistentConnection
         {
-            protected override Task OnConnectedAsync(Hosting.IRequest request, string connectionId)
+            protected override Task OnConnectedAsync(IRequest request, string connectionId)
             {
                 Console.WriteLine("{0} Connected", connectionId);
                 return base.OnConnectedAsync(request, connectionId);
             }
 
-            protected override Task OnReconnectedAsync(Hosting.IRequest request, System.Collections.Generic.IEnumerable<string> groups, string connectionId)
+            protected override Task OnReconnectedAsync(IRequest request, System.Collections.Generic.IEnumerable<string> groups, string connectionId)
             {
                 Console.WriteLine("{0} Reconnected", connectionId);
                 return base.OnReconnectedAsync(request, groups, connectionId);
             }
 
-            protected override Task OnReceivedAsync(Hosting.IRequest request, string connectionId, string data)
+            protected override Task OnReceivedAsync(IRequest request, string connectionId, string data)
             {
                 return Connection.Broadcast(data);
             }
