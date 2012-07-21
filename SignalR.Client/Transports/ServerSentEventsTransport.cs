@@ -12,6 +12,7 @@ namespace SignalR.Client.Transports
     {
         private int _initializedCalled;
 
+        private const string EventSourceKey = "eventSourceStream";
         private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(2);
 
         public ServerSentEventsTransport()
@@ -37,16 +38,15 @@ namespace SignalR.Client.Transports
 
         private void Reconnect(IConnection connection, string data)
         {
-            if (CancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-
             // Wait for a bit before reconnecting
             TaskAsyncHelper.Delay(ReconnectDelay).Then(() =>
             {
-                // Now attempt a reconnect
-                OpenConnection(connection, data, initializeCallback: null, errorCallback: null);
+                if (connection.State == ConnectionState.Reconnecting ||
+                    connection.ChangeState(ConnectionState.Connected, ConnectionState.Reconnecting))
+                {
+                    // Now attempt a reconnect
+                    OpenConnection(connection, data, initializeCallback: null, errorCallback: null);
+                }
             });
         }
 
@@ -54,12 +54,17 @@ namespace SignalR.Client.Transports
         {
             // If we're reconnecting add /connect to the url
             bool reconnecting = initializeCallback == null;
+            var callbackInvoker = new ThreadSafeInvoker();
 
             var url = (reconnecting ? connection.Url : connection.Url + "connect") + GetReceiveQueryString(connection, data);
 
             Action<IRequest> prepareRequest = PrepareRequest(connection);
 
+#if NET35
+            Debug.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "SSE: GET {0}", (object)url));
+#else
             Debug.WriteLine("SSE: GET {0}", (object)url);
+#endif
 
             _httpClient.GetAsync(url, request =>
             {
@@ -71,28 +76,20 @@ namespace SignalR.Client.Transports
             {
                 if (task.IsFaulted)
                 {
-                    var exception = task.Exception.Unwrap();
+                    Exception exception = task.Exception.Unwrap();
                     if (!ExceptionHelper.IsRequestAborted(exception))
                     {
-                        if (errorCallback != null &&
-                            Interlocked.Exchange(ref _initializedCalled, 1) == 0)
+                        if (errorCallback != null)
                         {
-                            errorCallback(exception);
+                            callbackInvoker.Invoke((cb, ex) => cb(ex), errorCallback, exception);
                         }
                         else if (reconnecting)
                         {
                             // Only raise the error event if we failed to reconnect
                             connection.OnError(exception);
+
+                            Reconnect(connection, data);
                         }
-                    }
-
-                    if (reconnecting && !CancellationToken.IsCancellationRequested)
-                    {
-                        connection.State = ConnectionState.Reconnecting;
-
-                        // Retry
-                        Reconnect(connection, data);
-                        return;
                     }
                 }
                 else
@@ -103,27 +100,21 @@ namespace SignalR.Client.Transports
                     var eventSource = new EventSourceStreamReader(stream);
                     bool retry = true;
 
-                    // When this fires close the event source
-                    CancellationToken.Register(() => eventSource.Close());
+                    connection.Items[EventSourceKey] = eventSource;
 
                     eventSource.Opened = () =>
                     {
-                        if (Interlocked.CompareExchange(ref _initializedCalled, 1, 0) == 0)
+                        if (initializeCallback != null)
                         {
-                            initializeCallback();
+                            callbackInvoker.Invoke(initializeCallback);
                         }
 
-                        if (reconnecting)
+                        if (reconnecting && connection.ChangeState(ConnectionState.Reconnecting, ConnectionState.Connected))
                         {
-                            // Change the status to connected
-                            connection.State = ConnectionState.Connected;
-
                             // Raise the reconnect event if the connection comes back up
                             connection.OnReconnected();
                         }
                     };
-
-                    eventSource.Error = connection.OnError;
 
                     eventSource.Message = sseEvent =>
                     {
@@ -145,15 +136,19 @@ namespace SignalR.Client.Transports
                         }
                     };
 
-                    eventSource.Closed = () =>
+                    eventSource.Closed = exception =>
                     {
+                        if (exception != null && !ExceptionHelper.IsRequestAborted(exception))
+                        {
+                            // Don't raise exceptions if the request was aborted (connection was stopped).
+                            connection.OnError(exception);
+                        }
+
+                        // See http://msdn.microsoft.com/en-us/library/system.net.httpwebresponse.close.aspx
                         response.Close();
 
-                        if (retry && !CancellationToken.IsCancellationRequested)
+                        if (retry)
                         {
-                            // If we're retrying then just go again
-                            connection.State = ConnectionState.Reconnecting;
-
                             Reconnect(connection, data);
                         }
                         else
@@ -162,27 +157,41 @@ namespace SignalR.Client.Transports
                         }
                     };
 
-                    if (!CancellationToken.IsCancellationRequested)
-                    {
-                        eventSource.Start();
-                    }
+                    eventSource.Start();
                 }
             });
 
-            if (initializeCallback != null)
+            if (errorCallback != null)
             {
                 TaskAsyncHelper.Delay(ConnectionTimeout).Then(() =>
                 {
-                    if (Interlocked.CompareExchange(ref _initializedCalled, 1, 0) == 0)
+                    callbackInvoker.Invoke((conn, cb) =>
                     {
                         // Stop the connection
-                        Stop(connection);
+                        Stop(conn);
 
                         // Connection timeout occured
-                        errorCallback(new TimeoutException());
-                    }
+                        cb(new TimeoutException());
+                    },
+                    connection,
+                    errorCallback);
                 });
             }
+        }
+
+        /// <summary>
+        /// Stops even event source as well and the base connection.
+        /// </summary>
+        /// <param name="connection">The <see cref="IConnection"/> being aborted.</param>
+        protected override void OnBeforeAbort(IConnection connection)
+        {
+            var eventSourceStream = connection.GetValue<EventSourceStreamReader>(EventSourceKey);
+            if (eventSourceStream != null)
+            {
+                eventSourceStream.Close();
+            }
+
+            base.OnBeforeAbort(connection);
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using SignalR.Infrastructure;
 using SignalR.Transports;
@@ -13,7 +14,7 @@ namespace SignalR
     {
         private const string WebSocketsTransportName = "webSockets";
 
-        protected IMessageBus _messageBus;
+        protected INewMessageBus _newMessageBus;
         protected IJsonSerializer _jsonSerializer;
         protected IConnectionIdGenerator _connectionIdGenerator;
         private ITransportManager _transportManager;
@@ -30,7 +31,7 @@ namespace SignalR
                 return;
             }
 
-            _messageBus = resolver.Resolve<IMessageBus>();
+            _newMessageBus = resolver.Resolve<INewMessageBus>();
             _connectionIdGenerator = resolver.Resolve<IConnectionIdGenerator>();
             _jsonSerializer = resolver.Resolve<IJsonSerializer>();
             _transportManager = resolver.Resolve<ITransportManager>();
@@ -38,6 +39,14 @@ namespace SignalR
             _serverMessageHandler = resolver.Resolve<IServerCommandHandler>();
 
             _initialized = true;
+        }
+
+        protected virtual TraceSource Trace
+        {
+            get
+            {
+                return _trace["SignalR.PersistentConnection"];
+            }
         }
 
         /// <summary>
@@ -163,7 +172,7 @@ namespace SignalR
 
         protected virtual Connection CreateConnection(string connectionId, IEnumerable<string> groups, IRequest request)
         {
-            return new Connection(_messageBus,
+            return new Connection(_newMessageBus,
                                   _jsonSerializer,
                                   DefaultSignal,
                                   connectionId,
@@ -182,16 +191,11 @@ namespace SignalR
             // The list of default signals this connection cares about:
             // 1. The default signal (the type name)
             // 2. The connection id (so we can message this particular connection)
-            // 3. Scoped Connection id + SIGNALRCOMMAND -> for built in commands that we need to process (for this connection only)
-            // 4. Connection id + SIGNALRCOMMAND -> for built in commands that we need to process
-
-            // Create a scoped connection id
-            string scopedConnectionId = DefaultSignal + "." + connectionId;
+            // 3. Connection id + SIGNALRCOMMAND -> for built in commands that we need to process
 
             return new string[] {
                 DefaultSignal,
                 connectionId,
-                SignalCommand.AddCommandSuffix(scopedConnectionId),
                 SignalCommand.AddCommandSuffix(connectionId)
             };
         }

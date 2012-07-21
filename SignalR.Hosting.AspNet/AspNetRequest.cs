@@ -48,6 +48,14 @@ namespace SignalR.Hosting.AspNet
             }
         }
 
+        public NameValueCollection ServerVariables
+        {
+            get
+            {
+                return _context.Request.ServerVariables;
+            }
+        }
+
         public NameValueCollection Form
         {
             get
@@ -138,16 +146,18 @@ namespace SignalR.Hosting.AspNet
             return (GetUnvalidatedCollections)Delegate.CreateDelegate(typeof(GetUnvalidatedCollections), firstArgument: null, method: getUnvalidatedCollectionsMethod);
         }
 
-        public void AcceptWebSocketRequest(Func<IWebSocket, Task> callback)
+        public Task AcceptWebSocketRequest(Func<IWebSocket, Task> callback)
         {
 #if NET45
             _context.AcceptWebSocketRequest(ws =>
             {
-                var handler = new AspNetWebSocketHandler();
+                var handler = new SignalR.WebSockets.DefaultWebSocketHandler();
                 var task = handler.ProcessWebSocketRequestAsync(ws);
                 callback(handler).Then(h => h.CleanClose(), handler);
                 return task;
             });
+
+            return TaskAsyncHelper.Empty;
 #else
             throw new NotSupportedException();
 #endif

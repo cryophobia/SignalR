@@ -1,23 +1,25 @@
-﻿using System;
-using System.Diagnostics;
+﻿using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace SignalR.Transports
 {
     public class ForeverFrameTransport : ForeverTransport
     {
-        private const string _initPrefix = "<!DOCTYPE html><html><head>" +
-                                           "<title>SignalR Forever Frame Transport Stream</title></head>\r\n" +
-                                           "<body>\r\n" +
+        private const string _initPrefix = "<!DOCTYPE html>" +
+                                           "<html>" +
+                                           "<head>" +
+                                           "<title>SignalR Forever Frame Transport Stream</title>\r\n" +
                                            "<script>\r\n" + //"    debugger;\r\n"+
                                            "    var $ = window.parent.jQuery,\r\n" +
                                            "        ff = $ ? $.signalR.transports.foreverFrame : null,\r\n" +
                                            "        c =  ff ? ff.getConnection('";
 
         private const string _initSuffix = "') : null,\r\n" +
-                                            "        r = ff ? ff.receive : function() {{}};\r\n" +
+                                            "        r = ff ? ff.receive : function() {};\r\n" +
                                             "    ff ? ff.started(c) : '';" +
-                                            "</script>";
+                                            "</script></head>" + 
+                                            "<body>\r\n";
 
         private readonly bool _isDebug;
 
@@ -29,30 +31,69 @@ namespace SignalR.Transports
 
         public override void KeepAlive()
         {
-            Debug.WriteLine("Sending empty keep alive packet to client");
-            var script = "<script>r(c, {});</script>\r\n";
-            Context.Response.WriteAsync(script).Catch();
+            OutputWriter.Write("<script>r(c, {});</script>");
+            OutputWriter.WriteLine();
+            OutputWriter.WriteLine();
+            OutputWriter.Flush();
         }
 
         public override Task Send(PersistentResponse response)
         {
-            var data = JsonSerializer.Stringify(response);
-            OnSending(data);
+            OnSendingResponse(response);
 
-            var script = "<script>r(c, " + data + ");</script>\r\n";
-            if (_isDebug)
-            {
-                script += "<div>" + data + "</div>\r\n";
-            }
+            OutputWriter.Write("<script>r(c, ");
+            JsonSerializer.Stringify(response, OutputWriter);
+            OutputWriter.Write(");</script>\r\n");
+            OutputWriter.Flush();
 
-            return Context.Response.WriteAsync(script);
+            return TaskAsyncHelper.Empty;
         }
 
         protected override Task InitializeResponse(ITransportConnection connection)
         {
             return base.InitializeResponse(connection)
-                .Then(initScript => Context.Response.WriteAsync(initScript),
-                      _initPrefix + Context.Request.QueryString["frameId"] + _initSuffix);
+                .Then(initScript =>
+                {
+                    Context.Response.ContentType = "text/html";
+                    OutputWriter.Write(initScript);
+                    OutputWriter.Flush();
+                },
+                _initPrefix + Context.Request.QueryString["frameId"] + _initSuffix);
+        }
+
+        private class TextWriterWrapper : TextWriter
+        {
+            private readonly TextWriter _writer;
+
+            public TextWriterWrapper(TextWriter writer)
+            {
+                _writer = writer;
+            }
+
+            public override Encoding Encoding
+            {
+                get { return _writer.Encoding; }
+            }
+
+            public override void Write(string value)
+            {
+                _writer.Write(EscapeAnyInlineScriptTags(value));
+            }
+
+            public override void WriteLine(string value)
+            {
+                _writer.Write(EscapeAnyInlineScriptTags(value));
+            }
+
+            public override void WriteLine()
+            {
+                _writer.WriteLine();
+            }
+
+            private static string EscapeAnyInlineScriptTags(string input)
+            {
+                return input.Replace("</script>", "</\"+\"script>");
+            }
         }
     }
 }

@@ -121,8 +121,12 @@
     <Content Include="Hubs\ShapeShare\ShapeShare.css" />
     <Content Include="Hubs\ShapeShare\ShapeShare.js" />
     <Content Include="Hubs\ShapeShare\index.htm" />
+    <Content Include="Raw\test\basic.htm" />
     <Content Include="Raw\crossdomain.htm" />
+    <Content Include="Raw\eventSource.html" />
     <Content Include="Raw\index.htm" />
+    <Content Include="Raw\test\connect-reconnect.htm" />
+    <Content Include="Raw\test\sending.htm" />
     <Content Include="Scripts\hubs.js" />
     <Content Include="Scripts\jcanvas.js" />
     <Content Include="Hubs\DrawingPad\drawingpad.js" />
@@ -180,6 +184,8 @@
     <Compile Include="Hubs\ShapeShare\ShapeShare.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Raw\Raw.cs" />
+    <Compile Include="Raw\SendingConnection.cs" />
+    <Compile Include="Raw\TestConnection.cs" />
     <Compile Include="SignalR.Master.cs">
       <DependentUpon>SignalR.Master</DependentUpon>
       <SubType>ASPXCodeBehind</SubType>
@@ -266,10 +272,10 @@
   </Target>
   -->
   <Target Name="BeforeBuild">
-    <Copy SourceFiles="..\..\SignalR\Scripts\jquery.signalR.js" DestinationFiles="Scripts\jquery.signalR.js" Condition=" '$(OS)' == 'Windows_NT' " />
-    <Copy SourceFiles="..\..\SignalR\Scripts\jquery.signalR.min.js" DestinationFiles="Scripts\jquery.signalR.min.js" Condition=" '$(OS)' == 'Windows_NT' " />
+    <Copy SourceFiles="..\..\SignalR.Client.JS\bin\jquery.signalR.js" DestinationFiles="Scripts\jquery.signalR.js" Condition=" '$(OS)' == 'Windows_NT' " />
+    <Copy SourceFiles="..\..\SignalR.Client.JS\bin\jquery.signalR.min.js" DestinationFiles="Scripts\jquery.signalR.min.js" Condition=" '$(OS)' == 'Windows_NT' " />
   </Target>
   <Target Name="AfterBuild">
-    <Exec Command="..\..\SignalR.ProxyGenerator\bin\$(Configuration)\hubify.exe /o:Scripts\hubs.js" Condition=" '$(OS)' == 'Windows_NT'" />
+    <Exec Command="..\..\..\SignalR.ProxyGenerator\bin\$(Configuration)\hubify.exe /o:..\Scripts\hubs.js" Condition=" '$(OS)' == 'Windows_NT'" WorkingDirectory="$(OutputPath)" />
   </Target>
 </Project>

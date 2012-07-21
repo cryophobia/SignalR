@@ -29,12 +29,6 @@ namespace SignalR.Client.Transports
             _transport = transport;
         }
 
-        public CancellationToken CancellationToken
-        {
-            get;
-            private set;
-        }
-
         public Task<NegotiationResponse> Negotiate(IConnection connection)
         {
             return GetNegotiationResponse(_httpClient, connection);
@@ -42,7 +36,12 @@ namespace SignalR.Client.Transports
 
         internal static Task<NegotiationResponse> GetNegotiationResponse(IHttpClient httpClient, IConnection connection)
         {
+#if SILVERLIGHT || WINDOWS_PHONE
+            string negotiateUrl = connection.Url + "negotiate?" + GetNoCacheUrlParam();
+#else
             string negotiateUrl = connection.Url + "negotiate";
+#endif
+
 
             return httpClient.GetAsync(negotiateUrl, connection.PrepareRequest).Then(response =>
             {
@@ -57,12 +56,9 @@ namespace SignalR.Client.Transports
             });
         }
 
-        public Task Start(IConnection connection, CancellationToken cancellationToken, string data)
+        public Task Start(IConnection connection, string data)
         {
             var tcs = new TaskCompletionSource<object>();
-
-            // Set the cancellation token for this operation
-            CancellationToken = cancellationToken;
 
             OnStart(connection, data, () => tcs.TrySetResult(null), exception => tcs.TrySetException(exception));
 
@@ -104,7 +100,7 @@ namespace SignalR.Client.Transports
 
             if (connection.MessageId != null)
             {
-                qsBuilder.Append("&messageId=" + connection.MessageId);
+                qsBuilder.Append("&messageId=" + Uri.EscapeDataString(connection.MessageId));
             }
 
             if (connection.Groups != null && connection.Groups.Any())
@@ -125,7 +121,15 @@ namespace SignalR.Client.Transports
                          .Append(customQuery);
             }
 
+#if SILVERLIGHT || WINDOWS_PHONE
+            qsBuilder.Append("&").Append(GetNoCacheUrlParam());
+#endif
             return qsBuilder.ToString();
+        }
+
+        private static string GetNoCacheUrlParam()
+        {
+            return "noCache=" + Guid.NewGuid().ToString();
         }
 
         protected virtual Action<IRequest> PrepareRequest(IConnection connection)
@@ -193,11 +197,6 @@ namespace SignalR.Client.Transports
                 return;
             }
 
-            if (connection.MessageId == null)
-            {
-                connection.MessageId = 0;
-            }
-
             try
             {
                 var result = JValue.Parse(response);
@@ -226,12 +225,17 @@ namespace SignalR.Client.Transports
                         }
                         catch (Exception ex)
                         {
+#if NET35
+                            Debug.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "Failed to process message: {0}", ex));
+#else
                             Debug.WriteLine("Failed to process message: {0}", ex);
+#endif
+
                             connection.OnError(ex);
                         }
                     }
 
-                    connection.MessageId = result["MessageId"].Value<long>();
+                    connection.MessageId = result["MessageId"].Value<string>();
 
                     var transportData = result["TransportData"] as JObject;
 
@@ -247,7 +251,11 @@ namespace SignalR.Client.Transports
             }
             catch (Exception ex)
             {
+#if NET35
+                Debug.WriteLine(String.Format(System.Globalization.CultureInfo.InvariantCulture, "Failed to response: {0}", ex));
+#else
                 Debug.WriteLine("Failed to response: {0}", ex);
+#endif
                 connection.OnError(ex);
             }
         }

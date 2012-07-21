@@ -172,6 +172,9 @@
     <Compile Include="..\SignalR.Client\Infrastructure\DisposableAction.cs">
       <Link>Infrastructure\DisposableAction.cs</Link>
     </Compile>
+    <Compile Include="..\SignalR.Client\Infrastructure\ThreadSafeInvoker.cs">
+      <Link>Infrastructure\ThreadSafeInvoker.cs</Link>
+    </Compile>
     <Compile Include="..\SignalR.Client\Infrastructure\StreamExtensions.cs">
       <Link>Infrastructure\StreamExtensions.cs</Link>
     </Compile>
@@ -223,7 +226,6 @@
     <Compile Include="Http\DefaultHttpClient.cs" />
     <Compile Include="Http\DefaultHttpHandler.cs" />
     <Compile Include="Http\HttpResponseMessageWrapper.cs" />
-    <Compile Include="Infrastructure\TypeExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

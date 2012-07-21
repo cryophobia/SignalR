@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using SignalR.Infrastructure;
 
@@ -9,6 +8,10 @@ namespace SignalR.Transports
     public class LongPollingTransport : TransportDisconnectBase, ITransport
     {
         private IJsonSerializer _jsonSerializer;
+
+        // This should be ok to do since long polling request never hang around too long
+        // so we won't bloat memory
+        private const int MessageBufferSize = 5000;
 
         public LongPollingTransport(HostContext context, IDependencyResolver resolver)
             : this(context,
@@ -26,6 +29,7 @@ namespace SignalR.Transports
 
         // Static events intended for use when measuring performance
         public static event Action<string> Sending;
+        public static event Action<PersistentResponse> SendingResponse;
         public static event Action<string> Receiving;
 
         /// <summary>
@@ -91,6 +95,14 @@ namespace SignalR.Transports
             }
         }
 
+        public override bool SupportsKeepAlive
+        {
+            get
+            {
+                return false;
+            }
+        }
+
         public Func<string, Task> Received { get; set; }
 
         public Func<Task> TransportConnected { get; set; }
@@ -111,7 +123,7 @@ namespace SignalR.Transports
             }
             else if (IsAbortRequest)
             {
-                return Connection.Abort();
+                return Connection.Abort(ConnectionId);
             }
             else
             {
@@ -124,7 +136,7 @@ namespace SignalR.Transports
                     if (IsReconnectRequest && Reconnected != null)
                     {
                         // Return a task that completes when the reconnected event task & the receive loop task are both finished
-                        return TaskAsyncHelper.Interleave(ProcessReceiveRequest, Reconnected, connection);
+                        return TaskAsyncHelper.Interleave(ProcessReceiveRequest, Reconnected, connection, Completed);
                     }
 
                     return ProcessReceiveRequest(connection);
@@ -138,7 +150,13 @@ namespace SignalR.Transports
         {
             HeartBeat.MarkConnection(this);
 
+            if (SendingResponse != null)
+            {
+                SendingResponse(response);
+            }
+
             AddTransportData(response);
+
             return Send((object)response);
         }
 
@@ -179,12 +197,20 @@ namespace SignalR.Transports
 
         private Task ProcessConnectRequest(ITransportConnection connection)
         {
-            HeartBeat.AddConnection(this);
-
             if (Connected != null)
             {
+                bool newConnection = HeartBeat.AddConnection(this);
+
                 // Return a task that completes when the connected event task & the receive loop task are both finished
-                return TaskAsyncHelper.Interleave(ProcessReceiveRequest, Connected, connection);
+                return TaskAsyncHelper.Interleave(ProcessReceiveRequestWithoutTracking, () =>
+                {
+                    if (newConnection)
+                    {
+                        return Connected();
+                    }
+                    return TaskAsyncHelper.Empty;
+                },
+                connection, Completed);
             }
 
             return ProcessReceiveRequest(connection);
@@ -192,9 +218,12 @@ namespace SignalR.Transports
 
         private Task ProcessReceiveRequest(ITransportConnection connection, Action postReceive = null)
         {
-            HeartBeat.UpdateConnection(this);
-            HeartBeat.MarkConnection(this);
+            HeartBeat.AddConnection(this);
+            return ProcessReceiveRequestWithoutTracking(connection, postReceive);
+        }
 
+        private Task ProcessReceiveRequestWithoutTracking(ITransportConnection connection, Action postReceive = null)
+        {
             if (TransportConnected != null)
             {
                 TransportConnected().Catch();
@@ -202,8 +231,8 @@ namespace SignalR.Transports
 
             // ReceiveAsync() will async wait until a message arrives then return
             var receiveTask = IsConnectRequest ?
-                              connection.ReceiveAsync(TimeoutToken) :
-                              connection.ReceiveAsync(MessageId, TimeoutToken);
+                              connection.ReceiveAsync(null, ConnectionEndToken, MessageBufferSize) :
+                              connection.ReceiveAsync(MessageId, ConnectionEndToken, MessageBufferSize);
 
             if (postReceive != null)
             {
@@ -212,6 +241,8 @@ namespace SignalR.Transports
 
             return receiveTask.Then(response =>
             {
+                response.TimedOut = IsTimedOut;
+
                 if (response.Aborted)
                 {
                     // If this was a clean disconnect then raise the event
@@ -222,14 +253,16 @@ namespace SignalR.Transports
             });
         }
 
-        private PersistentResponse AddTransportData(PersistentResponse response)
+        private void AddTransportData(PersistentResponse response)
         {
-            if (response != null)
+            if (LongPollDelay > 0)
             {
+                if (response.TransportData == null)
+                {
+                    response.TransportData = new Dictionary<string, object>();
+                }
                 response.TransportData["LongPollDelay"] = LongPollDelay;
             }
-
-            return response;
         }
     }
 }

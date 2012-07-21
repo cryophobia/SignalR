@@ -9,11 +9,13 @@ namespace SignalR
 {
     internal static class TaskAsyncHelper
     {
-        private static readonly Task _emptyTask = MakeEmpty();
+        private static readonly Task _emptyTask = MakeTask<object>(null);
+        private static readonly Task<bool> _trueTask = MakeTask<bool>(true);
+        private static readonly Task<bool> _falseTask = MakeTask<bool>(false);
 
-        private static Task MakeEmpty()
+        private static Task<T> MakeTask<T>(T value)
         {
-            return FromResult<object>(null);
+            return FromResult<T>(value);
         }
 
         public static Task Empty
@@ -21,6 +23,22 @@ namespace SignalR
             get
             {
                 return _emptyTask;
+            }
+        }
+
+        public static Task<bool> True
+        {
+            get
+            {
+                return _trueTask;
+            }
+        }
+
+        public static Task<bool> False
+        {
+            get
+            {
+                return _falseTask;
             }
         }
 
@@ -115,9 +133,8 @@ namespace SignalR
         /// Passes a task returning function into another task returning function so that
         /// it can decide when it starts and returns a task that completes when all are finished
         /// </summary>
-        public static Task Interleave<T>(Func<T, Action, Task> before, Func<Task> after, T arg)
+        public static Task Interleave<T>(Func<T, Action, Task> before, Func<Task> after, T arg, TaskCompletionSource<object> tcs)
         {
-            var tcs = new TaskCompletionSource<object>();
             var tasks = new[] {
                             tcs.Task,
                             before(arg, () => after().ContinueWith(tcs))
@@ -765,6 +782,11 @@ namespace SignalR
             internal static Task<Task> ThenWithArgs(Task task, Func<T1, Task> successor, T1 arg1)
             {
                 return TaskRunners<object, Task>.RunTask(task, () => successor(arg1));
+            }
+
+            internal static Task<Task> ThenWithArgs(Task task, Func<T1, T2, Task> successor, T1 arg1, T2 arg2)
+            {
+                return TaskRunners<object, Task>.RunTask(task, () => successor(arg1, arg2));
             }
 
             internal static Task<Task<TResult>> ThenWithArgs(Task<T> task, Func<T, T1, Task<TResult>> successor, T1 arg1)

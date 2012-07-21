@@ -54,18 +54,6 @@ namespace SignalR.Client.Hubs
         {
         }
 
-        public override Task Start(IClientTransport transport)
-        {
-            Sending += OnConnectionSending;
-            return base.Start(transport);
-        }
-
-        public override void Stop()
-        {
-            Sending -= OnConnectionSending;
-            base.Stop();
-        }
-
         protected override void OnReceived(JToken message)
         {
             var invocation = message.ToObject<HubInvocation>();
@@ -86,23 +74,7 @@ namespace SignalR.Client.Hubs
             base.OnReceived(message);
         }
 
-        /// <summary>
-        /// Creates an <see cref="IHubProxy"/> for the hub with the specified name.
-        /// </summary>
-        /// <param name="hubName">The name of the hub.</param>
-        /// <returns>A <see cref="IHubProxy"/></returns>
-        public IHubProxy CreateProxy(string hubName)
-        {
-            HubProxy hubProxy;
-            if (!_hubs.TryGetValue(hubName, out hubProxy))
-            {
-                hubProxy = new HubProxy(this, hubName);
-                _hubs[hubName] = hubProxy;
-            }
-            return hubProxy;
-        }
-
-        private string OnConnectionSending()
+        protected override string OnSending()
         {
             var data = _hubs.Select(p => new HubRegistrationData
             {
@@ -112,6 +84,27 @@ namespace SignalR.Client.Hubs
             return JsonConvert.SerializeObject(data);
         }
 
+        /// <summary>
+        /// Creates an <see cref="IHubProxy"/> for the hub with the specified name.
+        /// </summary>
+        /// <param name="hubName">The name of the hub.</param>
+        /// <returns>A <see cref="IHubProxy"/></returns>
+        public IHubProxy CreateProxy(string hubName)
+        {
+            if (State != ConnectionState.Disconnected)
+            {
+                throw new InvalidOperationException("Proxies cannot be added after the connection has been started.");
+            }
+
+            HubProxy hubProxy;
+            if (!_hubs.TryGetValue(hubName, out hubProxy))
+            {
+                hubProxy = new HubProxy(this, hubName);
+                _hubs[hubName] = hubProxy;
+            }
+            return hubProxy;
+        }
+        
         private static string GetUrl(string url, bool useDefaultUrl)
         {
             if (!url.EndsWith("/"))

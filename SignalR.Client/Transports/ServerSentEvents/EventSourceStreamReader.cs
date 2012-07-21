@@ -2,7 +2,8 @@
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
-using SignalR.Client.Infrastructure;
+using System.Threading.Tasks;
+using SignalR.Infrastructure;
 
 namespace SignalR.Client.Transports.ServerSentEvents
 {
@@ -15,10 +16,11 @@ namespace SignalR.Client.Transports.ServerSentEvents
         private readonly Stream _stream;
         private readonly ChunkBuffer _buffer;
         private readonly object _lockObj = new object();
+        private byte[] _readBuffer;
+
 
         private int _reading;
         private Action _setOpened;
-        private readonly CancellationToken _cancellationToken;
 
         /// <summary>
         /// Invoked when the connection is open.
@@ -28,7 +30,7 @@ namespace SignalR.Client.Transports.ServerSentEvents
         /// <summary>
         /// Invoked when the connection is closed.
         /// </summary>
-        public Action Closed { get; set; }
+        public Action<Exception> Closed { get; set; }
 
         /// <summary>
         /// Invoked when there's a message if received in the stream.
@@ -36,15 +38,9 @@ namespace SignalR.Client.Transports.ServerSentEvents
         public Action<SseEvent> Message { get; set; }
 
         /// <summary>
-        /// Invoked when there's an error.
+        /// Initializes a new instance of the <see cref="EventSourceStreamReader"/> class.
         /// </summary>
-        public Action<Exception> Error { get; set; }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="stream"></param>
-        /// <param name="cancellationToken"></param>
+        /// <param name="stream">The stream to read event source payloads from.</param>
         public EventSourceStreamReader(Stream stream)
         {
             _stream = stream;
@@ -72,6 +68,11 @@ namespace SignalR.Client.Transports.ServerSentEvents
                     OnOpened();
                 };
 
+                if (_readBuffer == null)
+                {
+                    _readBuffer = new byte[4096];
+                }
+
                 // Start the process loop
                 Process();
             }
@@ -82,74 +83,82 @@ namespace SignalR.Client.Transports.ServerSentEvents
         /// </summary>
         public void Close()
         {
-            if (Interlocked.Exchange(ref _reading, 0) == 1)
-            {
-                Debug.WriteLine("EventSourceReader: Connection Closed");
-                if (Closed != null)
-                {
-                    Closed();
-                }
-            }
+            Close(exception: null);
         }
 
         private void Process()
         {
+        Read:
+
             if (!Processing)
             {
                 return;
             }
 
-            var buffer = new byte[4096];
-            _stream.ReadAsync(buffer).ContinueWith(task =>
+            Task<int> readTask = _stream.ReadAsync(_readBuffer);
+
+            if (readTask.IsCompleted)
             {
-                // When the first get data from the server the trigger the event.
-                Interlocked.Exchange(ref _setOpened, () => { }).Invoke();
-
-                if (task.IsFaulted)
+                try
                 {
-                    Exception exception = task.Exception.Unwrap();
+                    // Observe all exceptions
+                    readTask.Wait();
 
-                    if (!ExceptionHelper.IsRequestAborted(exception))
+                    int read = readTask.Result;
+
+                    if (TryProcessRead(read))
                     {
-                        if (!(exception is IOException))
-                        {
-                            OnError(exception);
-                        }
-
-                        Process();
+                        goto Read;
                     }
-                    else
-                    {
-                        Close();
-                    }
-
-                    return;
                 }
-
-                int read = task.Result;
-
-                if (read > 0)
+                catch (Exception ex)
                 {
-                    // Put chunks in the buffer
-                    ProcessBuffer(buffer, read);
+                    Close(ex);
                 }
-
-                if (read == 0)
-                {
-                    Close();
-                    return;
-                }
-
-                // Keep reading the next set of data
-                Process();
-            });
+            }
+            else
+            {
+                ReadAsync(readTask);
+            }
         }
 
-        private void ProcessBuffer(byte[] buffer, int read)
+        private void ReadAsync(Task<int> readTask)
+        {
+            readTask.Catch(ex => Close(ex))
+                    .Then(read =>
+                    {
+                        if (TryProcessRead(read))
+                        {
+                            Process();
+                        }
+                    })
+                    .Catch();
+        }
+
+        private bool TryProcessRead(int read)
+        {
+            Interlocked.Exchange(ref _setOpened, () => { }).Invoke();
+
+            if (read > 0)
+            {
+                // Put chunks in the buffer
+                ProcessBuffer(read);
+
+                return true;
+            }
+            else if (read == 0)
+            {
+                Close();
+            }
+
+            return false;
+        }
+
+        private void ProcessBuffer(int read)
         {
             lock (_lockObj)
             {
-                _buffer.Add(buffer, read);
+                _buffer.Add(_readBuffer, read);
 
                 while (_buffer.HasChunks)
                 {
@@ -174,11 +183,23 @@ namespace SignalR.Client.Transports.ServerSentEvents
             }
         }
 
-        private void OnError(Exception exception)
+        private void Close(Exception exception)
         {
-            if (Error != null)
+            if (Interlocked.Exchange(ref _reading, 0) == 1)
             {
-                Error(exception);
+                Debug.WriteLine("EventSourceReader: Connection Closed");
+                if (Closed != null)
+                {
+                    if (exception != null)
+                    {
+                        exception = exception.Unwrap();
+                    }
+
+                    Closed(exception);
+                }
+
+                // Release the buffer
+                _readBuffer = null;
             }
         }
 

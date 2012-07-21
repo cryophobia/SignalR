@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Threading;
 using System.Threading.Tasks;
 using SignalR.Client.Http;
 
@@ -26,22 +25,22 @@ namespace SignalR.Client.Transports
             return HttpBasedTransport.GetNegotiationResponse(_httpClient, connection);
         }
 
-        public Task Start(IConnection connection, CancellationToken cancellationToken, string data)
+        public Task Start(IConnection connection, string data)
         {
             var tcs = new TaskCompletionSource<object>();
 
             // Resolve the transport
-            ResolveTransport(connection, cancellationToken, data, tcs, 0);
+            ResolveTransport(connection, data, tcs, 0);
 
             return tcs.Task;
         }
 
-        private void ResolveTransport(IConnection connection, CancellationToken cancellationToken, string data, TaskCompletionSource<object> tcs, int index)
+        private void ResolveTransport(IConnection connection, string data, TaskCompletionSource<object> tcs, int index)
         {
             // Pick the current transport
             IClientTransport transport = _transports[index];
 
-            transport.Start(connection, cancellationToken, data).ContinueWith(task =>
+            transport.Start(connection, data).ContinueWith(task =>
             {
                 if (task.IsFaulted)
                 {
@@ -50,14 +49,18 @@ namespace SignalR.Client.Transports
 #if !WINDOWS_PHONE && !SILVERLIGHT && !NETFX_CORE && !MONOTOUCH && !__ANDROID__
                     Trace.TraceError("SignalR exception thrown by Task: {0}", ex);
 #endif
+#if NET35
+                    Debug.WriteLine(System.String.Format(System.Globalization.CultureInfo.InvariantCulture, "Auto: Failed to connect to using transport {0}", (object)transport.GetType().Name));
+#else
                     Debug.WriteLine("Auto: Failed to connect to using transport {0}", (object)transport.GetType().Name);
+#endif
 
                     // If that transport fails to initialize then fallback
                     var next = index + 1;
                     if (next < _transports.Length)
                     {
                         // Try the next transport
-                        ResolveTransport(connection, cancellationToken, data, tcs, next);
+                        ResolveTransport(connection, data, tcs, next);
                     }
                     else
                     {
@@ -84,7 +87,10 @@ namespace SignalR.Client.Transports
 
         public void Stop(IConnection connection)
         {
-            _transport.Stop(connection);
+            if (_transport != null)
+            {
+                _transport.Stop(connection);
+            }
         }
     }
 }

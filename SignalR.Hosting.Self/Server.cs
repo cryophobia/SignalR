@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SignalR.Hosting.Common;
 using SignalR.Hosting.Self.Infrastructure;
+using SignalR.Hosting.Self.Properties;
 
 namespace SignalR.Hosting.Self
 {
@@ -40,6 +41,12 @@ namespace SignalR.Hosting.Self
             _url = url.Replace("*", @".*?");
             _listener = new HttpListener();
             _listener.Prefixes.Add(url);
+        }
+
+        public AuthenticationSchemes AuthenticationSchemes
+        {
+            get { return _listener.AuthenticationSchemes; }
+            set { _listener.AuthenticationSchemes = value; }
         }
 
         /// <summary>
@@ -160,9 +167,15 @@ namespace SignalR.Hosting.Self
                         context.Response.AddHeader("Access-Control-Allow-Credentials", "true");
                     }
 
-                    var request = new HttpListenerRequestWrapper(context.Request, context.User);
-                    var response = new HttpListenerResponseWrapper(context.Response, () => RegisterForDisconnect(context, cts.Cancel), cts.Token);
+                    RegisterForDisconnect(context, cts.Cancel);
+
+                    var request = new HttpListenerRequestWrapper(context);
+                    var response = new HttpListenerResponseWrapper(context.Response, cts.Token);
                     var hostContext = new HostContext(request, response);
+
+#if NET45
+                    hostContext.Items[HostConstants.SupportsWebSockets] = Environment.OSVersion.Version.Major >= 6 && Environment.OSVersion.Version.Minor >= 2;
+#endif
 
                     if (OnProcessRequest != null)
                     {
@@ -180,7 +193,12 @@ namespace SignalR.Hosting.Self
                     return connection.ProcessRequestAsync(hostContext);
                 }
 
-                return context.Response.NotFound();
+                if (path.Equals("/clientaccesspolicy.xml", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    return context.Response.WriteAsync(Resources.ClientAccessPolicyXml);
+                }
+
+	            return context.Response.NotFound();
             }
             catch (Exception ex)
             {

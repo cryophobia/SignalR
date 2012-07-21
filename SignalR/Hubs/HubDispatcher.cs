@@ -32,6 +32,14 @@ namespace SignalR.Hubs
             _url = url;
         }
 
+        protected override TraceSource Trace
+        {
+            get
+            {
+                return _trace["SignalR.HubDispatcher"];
+            }
+        }
+
         public override void Initialize(IDependencyResolver resolver)
         {
             _proxyGenerator = resolver.Resolve<IJavaScriptProxyGenerator>();
@@ -115,9 +123,8 @@ namespace SignalR.Hubs
                 resultTask = ProcessResponse(state, null, hubRequest, e);
             }
 
-            return resultTask
-                .ContinueWith(_ => base.OnReceivedAsync(request, connectionId, data))
-                .FastUnwrap();
+            return resultTask.Then(() => base.OnReceivedAsync(request, connectionId, data))
+                             .Catch();
         }
 
         public override Task ProcessRequestAsync(HostContext context)
@@ -193,8 +200,8 @@ namespace SignalR.Hubs
                 {
                     state = state ?? new TrackingDictionary();
                     hub.Context = new HubCallerContext(request, connectionId);
-                    hub.Caller = new StatefulSignalAgent(Connection, connectionId, descriptor.Name, state);
-                    hub.Clients = new ClientAgent(Connection, descriptor.Name);
+                    hub.Caller = new StatefulSignalProxy(Connection, connectionId, descriptor.Name, state);
+                    hub.Clients = new ClientProxy(Connection, descriptor.Name);
                     hub.Groups = new GroupManager(Connection, descriptor.Name);
                 }
 
@@ -202,8 +209,7 @@ namespace SignalR.Hubs
             }
             catch (Exception ex)
             {
-                _trace.Source.TraceInformation("Error creating hub {0}. " + ex.Message, descriptor.Name);
-                Debug.WriteLine("HubDispatcher: Error creating hub {0}. " + ex.Message, (object)descriptor.Name);
+                Trace.TraceInformation("Error creating hub {0}. " + ex.Message, descriptor.Name);
 
                 if (throwIfFailedToCreate)
                 {
@@ -266,7 +272,13 @@ namespace SignalR.Hubs
             IEnumerable<string> hubSignals = clientHubInfo.SelectMany(info => GetSignals(info, connectionId))
                                                           .Concat(GetDefaultSignals(connectionId));
 
-            return new Connection(_messageBus, _jsonSerializer, null, connectionId, hubSignals, groups, _trace);
+            return new Connection(_newMessageBus, 
+                                  _jsonSerializer, 
+                                  null, 
+                                  connectionId, 
+                                  hubSignals, 
+                                  groups, 
+                                  _trace);
         }
 
         private IEnumerable<string> GetSignals(ClientHubInfo hubInfo, string connectionId)

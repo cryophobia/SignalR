@@ -65,7 +65,7 @@ namespace SignalR
             var hubManager = _resolver.Resolve<IHubManager>();
             HubDescriptor hubDescriptor = hubManager.EnsureHub(hubName);
 
-            return new HubContext(new ClientAgent(connection, hubDescriptor.Name), 
+            return new HubContext(new ClientProxy(connection, hubDescriptor.Name), 
                                   new GroupManager(connection, hubName));
         }
 
@@ -75,7 +75,7 @@ namespace SignalR
 
             // Give this a unique id
             var connectionId = Guid.NewGuid().ToString();
-            return new Connection(_resolver.Resolve<IMessageBus>(),
+            return new Connection(_resolver.Resolve<INewMessageBus>(),
                                   _resolver.Resolve<IJsonSerializer>(),
                                   connectionName,
                                   connectionId,

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Moq;
+using Newtonsoft.Json.Linq;
 using SignalR.Client.Hubs;
 using SignalR.Hosting.Memory;
 using SignalR.Hubs;
@@ -35,9 +36,9 @@ namespace SignalR.Tests
         {
             var result = new HubResult<object>
             {
-                State = new Dictionary<string, object>
+                State = new Dictionary<string, JToken>
                 {
-                    { "state", 1 }
+                    { "state", JToken.FromObject(1) }
                 }
             };
 
@@ -83,7 +84,7 @@ namespace SignalR.Tests
                 eventRaised = true;
             });
 
-            hubProxy.InvokeEvent("foo", new object[] { });
+            hubProxy.InvokeEvent("foo", new JToken[] { });
             Assert.True(eventRaised);
         }
 
@@ -100,7 +101,7 @@ namespace SignalR.Tests
                 Assert.Equal(1, i);
             });
 
-            hubProxy.InvokeEvent("foo", new object[] { 1 });
+            hubProxy.InvokeEvent("foo", new[] { JToken.FromObject(1) });
             Assert.True(eventRaised);
         }
 

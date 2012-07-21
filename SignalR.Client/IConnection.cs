@@ -9,14 +9,15 @@ namespace SignalR.Client
 {
     public interface IConnection
     {
-        long? MessageId { get; set; }
-        Func<string> Sending { get; set; }
+        string MessageId { get; set; }
         IEnumerable<string> Groups { get; set; }
         IDictionary<string, object> Items { get; }
         string ConnectionId { get; }
         string Url { get; }
         string QueryString { get; }
-        ConnectionState State { get; set; }
+        ConnectionState State { get; }
+
+        bool ChangeState(ConnectionState oldState, ConnectionState newState);
 
         ICredentials Credentials { get; set; }
         CookieContainer CookieContainer { get; set; }
