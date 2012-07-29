@@ -93,7 +93,11 @@ namespace SignalR.Client
             Url = url;
             QueryString = queryString;
             Groups = Enumerable.Empty<string>();
+#if MONOTOUCH
+			Items = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+#else
             Items = new ConcurrentDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+#endif
             State = ConnectionState.Disconnected;
         }
 

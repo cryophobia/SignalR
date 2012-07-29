@@ -206,8 +206,13 @@ namespace SignalR.Client.Transports
                     return;
                 }
 
-                timedOut = result.Value<bool>("TimedOut");
+#if MONOTOUCH
+				timedOut = ((bool?)result["TimedOut"]) ?? false;
+                disconnected = (bool)result["Disconnect"];
+#else
+				timedOut = result.Value<bool>("TimedOut");
                 disconnected = result.Value<bool>("Disconnect");
+#endif
 
                 if (disconnected)
                 {

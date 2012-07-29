@@ -8,11 +8,19 @@ namespace SignalR.Client
         public static T GetValue<T>(this IConnection connection, string key)
         {
             object value;
-            if (connection.Items.TryGetValue(key, out value))
-            {
-                return (T)value;
-            }
 
+#if MONOTOUCH
+			lock(connection.Items) 
+			{
+#endif
+				if (connection.Items.TryGetValue(key, out value))
+	            {
+	                return (T)value;
+	            }
+#if MONOTOUCH
+			}
+#endif
+            
             return default(T);
         }
 

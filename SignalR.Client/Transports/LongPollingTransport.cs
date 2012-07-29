@@ -62,7 +62,14 @@ namespace SignalR.Client.Transports
             _httpClient.PostAsync(url, PrepareRequest(connection)).ContinueWith(task =>
             {
                 // Clear the pending request
-                connection.Items.Remove(HttpRequestKey);
+#if MONOTOUCH
+				lock(connection.Items) 
+				{
+#endif
+                	connection.Items.Remove(HttpRequestKey);
+#if MONOTOUCH
+				}
+#endif
 
                 bool shouldRaiseReconnect = false;
                 bool disconnectedReceived = false;

@@ -100,7 +100,14 @@ namespace SignalR.Client.Transports
                     var eventSource = new EventSourceStreamReader(stream);
                     bool retry = true;
 
-                    connection.Items[EventSourceKey] = eventSource;
+#if MONOTOUCH
+					lock(connection.Items) 
+					{
+#endif
+						connection.Items[EventSourceKey] = eventSource;
+#if MONOTOUCH
+					}
+#endif
 
                     eventSource.Opened = () =>
                     {
