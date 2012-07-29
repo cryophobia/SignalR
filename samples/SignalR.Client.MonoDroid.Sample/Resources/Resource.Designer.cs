@@ -40,17 +40,11 @@ namespace SignalR.Client.MonoDroid.Sample
 			// aapt resource value: 0x7f050000
 			public const int Message = 2131034112;
 			
-			// aapt resource value: 0x7f050003
-			public const int MessageText = 2131034115;
-			
 			// aapt resource value: 0x7f050002
 			public const int Messages = 2131034114;
 			
 			// aapt resource value: 0x7f050001
 			public const int SendMessage = 2131034113;
-			
-			// aapt resource value: 0x7f050004
-			public const int TimeReceived = 2131034116;
 			
 			private Id()
 			{
@@ -62,9 +56,6 @@ namespace SignalR.Client.MonoDroid.Sample
 			
 			// aapt resource value: 0x7f030000
 			public const int Main = 2130903040;
-			
-			// aapt resource value: 0x7f030001
-			public const int Message = 2130903041;
 			
 			private Layout()
 			{
