@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SignalR.Client.MonoTouch.Sample", "SignalR.Client.MonoTouch.Sample.csproj", "{2B9C177F-2283-4E7B-943D-561D4B1CA72F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SignalR.Client.MonoTouch", "..\..\SignalR.Client.MonoTouch\SignalR.Client.MonoTouch.csproj", "{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|iPhoneSimulator = Debug|iPhoneSimulator
+		Release|iPhoneSimulator = Release|iPhoneSimulator
+		Debug|iPhone = Debug|iPhone
+		Release|iPhone = Release|iPhone
+		Ad-Hoc|iPhone = Ad-Hoc|iPhone
+		AppStore|iPhone = AppStore|iPhone
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Ad-Hoc|iPhone.ActiveCfg = Ad-Hoc|iPhone
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Ad-Hoc|iPhone.Build.0 = Ad-Hoc|iPhone
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.AppStore|iPhone.ActiveCfg = AppStore|iPhone
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.AppStore|iPhone.Build.0 = AppStore|iPhone
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Debug|iPhone.ActiveCfg = Debug|iPhone
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Debug|iPhone.Build.0 = Debug|iPhone
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Debug|iPhoneSimulator.ActiveCfg = Debug|iPhoneSimulator
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Debug|iPhoneSimulator.Build.0 = Debug|iPhoneSimulator
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Release|iPhone.ActiveCfg = Release|iPhone
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Release|iPhone.Build.0 = Release|iPhone
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Release|iPhoneSimulator.ActiveCfg = Release|iPhoneSimulator
+		{2B9C177F-2283-4E7B-943D-561D4B1CA72F}.Release|iPhoneSimulator.Build.0 = Release|iPhoneSimulator
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Ad-Hoc|iPhone.ActiveCfg = Debug|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Ad-Hoc|iPhone.Build.0 = Debug|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.AppStore|iPhone.ActiveCfg = Debug|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.AppStore|iPhone.Build.0 = Debug|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Debug|iPhone.ActiveCfg = Debug|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Debug|iPhone.Build.0 = Debug|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Debug|iPhoneSimulator.ActiveCfg = Debug|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Debug|iPhoneSimulator.Build.0 = Debug|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Release|iPhone.ActiveCfg = Release|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Release|iPhone.Build.0 = Release|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Release|iPhoneSimulator.ActiveCfg = Release|Any CPU
+		{40E1805C-0D8D-400B-AB83-C7FB6D6997FB}.Release|iPhoneSimulator.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(MonoDevelopProperties) = preSolution
+		StartupItem = SignalR.Client.MonoTouch.Sample.csproj
+	EndGlobalSection
+EndGlobal
