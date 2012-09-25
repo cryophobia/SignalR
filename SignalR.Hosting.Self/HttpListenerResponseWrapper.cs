@@ -1,6 +1,8 @@
-﻿using System.IO;
+﻿using System;
 using System.Net;
 using System.Threading;
+using System.Threading.Tasks;
+using SignalR.Hosting.Self.Infrastructure;
 
 namespace SignalR.Hosting.Self
 {
@@ -8,6 +10,8 @@ namespace SignalR.Hosting.Self
     {
         private readonly HttpListenerResponse _httpListenerResponse;
         private readonly CancellationToken _cancellationToken;
+
+        private bool _ended;
 
         public HttpListenerResponseWrapper(HttpListenerResponse httpListenerResponse, CancellationToken cancellationToken)
         {
@@ -31,16 +35,45 @@ namespace SignalR.Hosting.Self
         {
             get
             {
-                return !_cancellationToken.IsCancellationRequested;
+                return !_ended && !_cancellationToken.IsCancellationRequested;
             }
         }
 
-        public Stream OutputStream
+        public Task WriteAsync(ArraySegment<byte> data)
         {
-            get
+            return DoWrite(data).Then(response =>
             {
-                return _httpListenerResponse.OutputStream;
+#if NET45
+                return response.OutputStream.FlushAsync();
+#else
+                response.OutputStream.Flush();                
+                return TaskAsyncHelper.Empty;
+#endif
+
+            }, _httpListenerResponse)
+            .Catch(ex => _ended = true);
+        }
+
+        public Task EndAsync(ArraySegment<byte> data)
+        {
+            return DoWrite(data).Then(response =>
+            {
+                response.CloseSafe();
+
+                // Mark the connection as ended after we close it
+                _ended = true;
+            }, 
+            _httpListenerResponse);
+        }
+
+        private Task DoWrite(ArraySegment<byte> data)
+        {
+            if (!IsClientConnected)
+            {
+                return TaskAsyncHelper.Empty;
             }
+
+            return _httpListenerResponse.WriteAsync(data).Catch();
         }
     }
 }

@@ -8,6 +8,8 @@ namespace SignalR
     /// </summary>
     public class PersistentResponse
     {
+        private readonly IDictionary<string, object> _transportData = new Dictionary<string, object>();
+
         /// <summary>
         /// The id of the last message in the connection received.
         /// </summary>
@@ -16,7 +18,7 @@ namespace SignalR
         /// <summary>
         /// The list of messages to be sent to the receiving connection.
         /// </summary>
-        public IList<string> Messages { get; set; }
+        public IEnumerable<object> Messages { get; set; }
 
         /// <summary>
         /// True if the connection receives a disconnect command.
@@ -26,6 +28,7 @@ namespace SignalR
         /// <summary>
         /// True if the connection was forcibly closed. 
         /// </summary>
+        [JsonIgnore]
         public bool Aborted { get; set; }
 
         /// <summary>
@@ -36,6 +39,9 @@ namespace SignalR
         /// <summary>
         /// Transport specific configurtion information.
         /// </summary>
-        public IDictionary<string, object> TransportData { get; set; }
+        public IDictionary<string, object> TransportData
+        {
+            get { return _transportData; }
+        }
     }
 }

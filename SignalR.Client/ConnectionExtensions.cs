@@ -13,14 +13,14 @@ namespace SignalR.Client
 			lock(connection.Items) 
 			{
 #endif
-				if (connection.Items.TryGetValue(key, out value))
-	            {
-	                return (T)value;
-	            }
+                if (connection.Items.TryGetValue(key, out value))
+                {
+                    return (T)value;
+                }
 #if MONOTOUCH
 			}
 #endif
-            
+
             return default(T);
         }
 

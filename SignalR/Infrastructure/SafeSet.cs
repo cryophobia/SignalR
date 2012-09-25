@@ -23,10 +23,10 @@ namespace SignalR.Infrastructure
             _items = new ConcurrentDictionary<T, object>(items.Select(x => new KeyValuePair<T, object>(x, null)));
         }
 
-        public ICollection<T> GetSnapshot()
+        public IEnumerable<T> GetSnapshot()
         {
             // The Keys property locks, so Select instead
-            return _items.Keys;
+            return _items.Select(item => item.Key);
         }
 
         public void Add(T item)

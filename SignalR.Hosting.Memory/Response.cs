@@ -1,8 +1,8 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 using IClientResponse = SignalR.Client.Http.IResponse;
 
@@ -10,36 +10,42 @@ namespace SignalR.Hosting.Memory
 {
     public class Response : IClientResponse, IResponse
     {
+        private ArraySegment<byte> _nonStreamingData;
         private readonly CancellationToken _clientToken;
-        private readonly ResponseStream _stream;
+        private readonly FollowStream _responseStream;
+        private bool _ended;
 
-        public Response(CancellationToken clientToken, Action flush)
+        public Response(CancellationToken clientToken, Action startSending)
         {
             _clientToken = clientToken;
-            _stream = new ResponseStream(flush);
+            _responseStream = new FollowStream(startSending);
         }
 
         public string ReadAsString()
         {
-            return new StreamReader(_stream).ReadToEnd();
+            if (_nonStreamingData.Array == null)
+            {
+                return null;
+            }
+
+            return Encoding.UTF8.GetString(_nonStreamingData.Array, _nonStreamingData.Offset, _nonStreamingData.Count);
         }
 
         public Stream GetResponseStream()
         {
-            return _stream;
+            return _responseStream;
         }
 
         public void Close()
         {
-            _stream.Close();
+            _responseStream.Close();
         }
 
         public bool IsClientConnected
         {
             get
             {
-                return !_stream.CancellationToken.IsCancellationRequested && 
-                       !_clientToken.IsCancellationRequested;
+                return !_responseStream.Ended && !_clientToken.IsCancellationRequested && !_ended;
             }
         }
 
@@ -49,30 +55,40 @@ namespace SignalR.Hosting.Memory
             set;
         }
 
-        public Stream OutputStream
+        public Task WriteAsync(ArraySegment<byte> data)
         {
-            get { return _stream; }
+            if (IsClientConnected)
+            {
+                _responseStream.Write(data.Array, data.Offset, data.Count);
+            }
+
+            return TaskAsyncHelper.Empty;
+        }
+
+        public Task EndAsync(ArraySegment<byte> data)
+        {
+            _nonStreamingData = data;
+            _ended = true;
+            return TaskAsyncHelper.Empty;
         }
 
         /// <summary>
         /// Mimics a network stream between client and server.
         /// </summary>
-        private class ResponseStream : Stream
+        private class FollowStream : Stream
         {
-            private readonly BlockingCollection<ArraySegment<byte>> _queue;
-            private readonly Stack<ArraySegment<byte>> _backlog;
-            private readonly CancellationTokenSource _cancellationTokenSource;
+            private readonly MemoryStream _ms;
+            private int _readPosition;
             private event Action _onWrite;
             private event Action _onClosed;
-            private Action _flush;
+            private readonly Action _start;
+            private int _streaming;
             private readonly object _lockObj = new object();
 
-            public ResponseStream(Action flush)
+            public FollowStream(Action start)
             {
-                _flush = flush;
-                _queue = new BlockingCollection<ArraySegment<byte>>();
-                _backlog = new Stack<ArraySegment<byte>>();
-                _cancellationTokenSource = new CancellationTokenSource();
+                _ms = new MemoryStream();
+                _start = start;
             }
 
             public override bool CanRead
@@ -99,17 +115,19 @@ namespace SignalR.Hosting.Memory
                 }
             }
 
-            public CancellationToken CancellationToken
+            public bool Ended { get; private set; }
+
+            private void EnsureStarted()
             {
-                get
+                if (Interlocked.Exchange(ref _streaming, 1) == 0)
                 {
-                    return _cancellationTokenSource.Token;
+                    _start();
                 }
             }
 
             public override void Flush()
             {
-                Interlocked.Exchange(ref _flush, () => { }).Invoke();
+                throw new NotImplementedException();
             }
 
             public override long Length
@@ -133,38 +151,19 @@ namespace SignalR.Hosting.Memory
             {
                 try
                 {
-                    ArraySegment<byte> queuedBuffer;
+                    // Read count bytes from the underlying buffer
+                    byte[] followingBuffer = _ms.GetBuffer();
 
-                    // First check to see if there's a backlog
-                    if (_backlog.Count > 0)
-                    {
-                        queuedBuffer = _backlog.Pop();
-                    }
-                    else
-                    {
-                        // Read the next chunk from the buffer
-                        if (!_queue.TryTake(out queuedBuffer))
-                        {
-                            queuedBuffer = _queue.Take(CancellationToken);
-                        }
-                    }
+                    // Get the max len
+                    int read = Math.Min(count, (int)_ms.Length - _readPosition);
 
-                    int read = Math.Min(count, queuedBuffer.Count);
-                    int remainder = queuedBuffer.Count - read;
+                    // Copy it to the output buffer
+                    Array.Copy(followingBuffer, _readPosition, buffer, offset, read);
 
-                    if (remainder > 0)
-                    {
-                        // Push the remainder back onto the backlog
-                        _backlog.Push(new ArraySegment<byte>(queuedBuffer.Array, queuedBuffer.Offset + read, remainder));
-                    }
-
-                    Array.Copy(queuedBuffer.Array, queuedBuffer.Offset, buffer, offset, read);
+                    // Move our cursor into the data further
+                    _readPosition += read;
 
                     return read;
-                }
-                catch (OperationCanceledException)
-                {
-                    return 0;
                 }
                 catch (ObjectDisposedException)
                 {
@@ -193,7 +192,7 @@ namespace SignalR.Hosting.Memory
 
                 _onClosed += closedHandler;
 
-                if (CancellationToken.IsCancellationRequested)
+                if (Ended)
                 {
                     ar.SetAsCompleted(0, true);
                     return ar;
@@ -201,7 +200,7 @@ namespace SignalR.Hosting.Memory
 
                 int read = Read(buffer, offset, count);
 
-                if (read != 0 || CancellationToken.IsCancellationRequested)
+                if (read != 0 || Ended)
                 {
                     lock (_lockObj)
                     {
@@ -241,9 +240,8 @@ namespace SignalR.Hosting.Memory
 
             public override void Close()
             {
-                Flush();
-
-                _cancellationTokenSource.Cancel(throwOnFirstException: false);
+                Ended = true;
+                _ms.Close();
 
                 if (_onClosed != null)
                 {
@@ -263,16 +261,23 @@ namespace SignalR.Hosting.Memory
                 throw new NotImplementedException();
             }
 
+            public void Write(string data)
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(data);
+                Write(bytes, 0, bytes.Length);
+            }
+
             public override void Write(byte[] buffer, int offset, int count)
             {
-                _queue.Add(new ArraySegment<byte>(buffer, offset, count));
+                _ms.Write(buffer, offset, count);
 
                 if (_onWrite != null)
                 {
                     _onWrite();
                 }
+
+                EnsureStarted();
             }
         }
-
     }
 }

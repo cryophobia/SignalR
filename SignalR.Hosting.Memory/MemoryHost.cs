@@ -36,7 +36,7 @@ namespace SignalR.Hosting.Memory
             return ProcessRequest(url, prepareRequest, postData);
         }
 
-        public Task<IClientResponse> ProcessRequest(string url, Action<IClientRequest> prepareRequest, Dictionary<string, string> postData)
+        private Task<IClientResponse> ProcessRequest(string url, Action<IClientRequest> prepareRequest, Dictionary<string, string> postData)
         {
             var uri = new Uri(url);
             PersistentConnection connection;

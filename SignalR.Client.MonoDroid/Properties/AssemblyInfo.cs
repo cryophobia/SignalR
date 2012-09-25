@@ -1,5 +1,5 @@
 ﻿using System.Reflection;
 
 
-[assembly: AssemblyTitle("SignalR.Client.MonoTouch")]
-[assembly: AssemblyDescription("MonoTouch client for SignalR")]
+[assembly: AssemblyTitle("SignalR.Client.MonoDroid")]
+[assembly: AssemblyDescription("Mono for Android client for SignalR")]

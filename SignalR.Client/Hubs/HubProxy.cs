@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-#if !WINDOWS_PHONE && !NET35 && !MONOTOUCH
+#if !WINDOWS_PHONE && !NET35
 using System.Dynamic;
 #endif
 using System.Threading.Tasks;
@@ -10,7 +10,7 @@ using Newtonsoft.Json.Linq;
 namespace SignalR.Client.Hubs
 {
     public class HubProxy :
-#if !WINDOWS_PHONE && !NET35 && !MONOTOUCH
+#if !WINDOWS_PHONE && !NET35
  DynamicObject,
 #endif
  IHubProxy
@@ -30,13 +30,19 @@ namespace SignalR.Client.Hubs
         {
             get
             {
-                JToken value;
-                _state.TryGetValue(name, out value);
-                return value;
+                lock (_state)
+                {
+                    JToken value;
+                    _state.TryGetValue(name, out value);
+                    return value;
+                }
             }
             set
             {
-                _state[name] = value;
+                lock (_state)
+                {
+                    _state[name] = value;
+                }
             }
         }
 
@@ -108,7 +114,7 @@ namespace SignalR.Client.Hubs
             });
         }
 
-#if !WINDOWS_PHONE && !NET35 && !MONOTOUCH
+#if !WINDOWS_PHONE && !NET35
         public override bool TrySetMember(SetMemberBinder binder, object value)
         {
             this[binder.Name] = value as JToken ?? JToken.FromObject(value);

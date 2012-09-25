@@ -8,26 +8,27 @@ namespace SignalR.Infrastructure
     /// <summary>
     /// Default <see cref="IServerCommandHandler"/> implementation.
     /// </summary>
-    public class ServerCommandHandler : IServerCommandHandler, ISubscriber
+    public class ServerCommandHandler : IServerCommandHandler
     {
-        private readonly INewMessageBus _messageBus;
+        private readonly IMessageBus _messageBus;
         private readonly IServerIdManager _serverIdManager;
         private readonly IJsonSerializer _serializer;
-        private const int MessageBufferSize = 10;
 
         // The signal for all signalr servers
         private const string ServerSignal = "__SIGNALR__SERVER__";
         private static readonly string[] ServerSignals = new[] { ServerSignal };
 
+        private string _messageId;
+        
         public ServerCommandHandler(IDependencyResolver resolver) :
-            this(resolver.Resolve<INewMessageBus>(),
+            this(resolver.Resolve<IMessageBus>(),
                  resolver.Resolve<IServerIdManager>(),
                  resolver.Resolve<IJsonSerializer>())
         {
 
         }
 
-        public ServerCommandHandler(INewMessageBus messageBus, IServerIdManager serverIdManager, IJsonSerializer serializer)
+        public ServerCommandHandler(IMessageBus messageBus, IServerIdManager serverIdManager, IJsonSerializer serializer)
         {
             _messageBus = messageBus;
             _serverIdManager = serverIdManager;
@@ -42,53 +43,47 @@ namespace SignalR.Infrastructure
             set;
         }
 
-
-        public IEnumerable<string> EventKeys
-        {
-            get
-            {
-                return ServerSignals;
-            }
-        }
-
-        public event Action<string, string> EventAdded;
-
-        public event Action<string> EventRemoved;
-
         public Task SendCommand(ServerCommand command)
         {
             // Store where the message originated from
             command.ServerId = _serverIdManager.ServerId;
 
+            // Wrap the value so buses that need to serialize can call ToString()
+            var wrappedValue = new WrappedValue(command, _serializer);
+
             // Send the command to the all servers
-            return _messageBus.Publish(_serverIdManager.ServerId, ServerSignal, _serializer.Stringify(command));
+            return _messageBus.Send(_serverIdManager.ServerId, ServerSignal, wrappedValue);
         }
 
         private void ProcessMessages()
         {
             // Process messages that come from the bus for servers
-            _messageBus.Subscribe(this, cursor: null, callback: HandleServerCommands, messageBufferSize: MessageBufferSize);
+            _messageBus.GetMessages(ServerSignals, _messageId, CancellationToken.None)
+                       .Then(result =>
+                       {
+                           // Handle the server commands
+                           HandleServerCommands(result.Messages);
+
+                           // Store the last message id
+                           _messageId = result.LastMessageId;
+
+                           // Check for more messages
+                           ProcessMessages();
+                       });
         }
 
-        private Task<bool> HandleServerCommands(MessageResult result)
+        private void HandleServerCommands(IList<Message> messages)
         {
-            for (int i = 0; i < result.Messages.Count; i++)
+            foreach (var message in messages)
             {
-                for (int j = result.Messages[i].Offset; j < result.Messages[i].Offset + result.Messages[i].Count; j++)
+                // Only handle server commands
+                if (ServerSignal.Equals(message.SignalKey))
                 {
-                    Message message = result.Messages[i].Array[j];
-
-                    // Only handle server commands
-                    if (ServerSignal.Equals(message.Key))
-                    {
-                        // Uwrap the command and raise the event
-                        var command = _serializer.Parse<ServerCommand>(message.Value);
-                        OnCommand(command);
-                    }
+                    // Uwrap the command and raise the event
+                    var command = WrappedValue.Unwrap<ServerCommand>(message.Value, _serializer);
+                    OnCommand(command);
                 }
             }
-
-            return TaskAsyncHelper.True;
         }
 
         private void OnCommand(ServerCommand command)

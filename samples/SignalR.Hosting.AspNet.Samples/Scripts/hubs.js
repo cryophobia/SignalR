@@ -1,5 +1,5 @@
 /*!
- * SignalR JavaScript Library v0.5.2
+ * SignalR JavaScript Library v0.5.3
  * http://signalr.net/
  *
  * Copyright David Fowler and Damian Edwards 2012
@@ -8,7 +8,7 @@
  *
  */
 
-/// <reference path="jquery-1.6.2.js" />
+/// <reference path="..\..\SignalR.Client.JS\Scripts\jquery-1.6.2.js" />
 /// <reference path="jquery.signalR.js" />
 (function ($, window) {
     /// <param name="$" type="jQuery" />
@@ -22,12 +22,32 @@
 
     function makeProxyCallback(hub, callback) {
         return function () {
-            // Update the hub state
-            $.extend(hub, this.state);
-
+            updateHubState(hub, this.state);
+            
             // Call the client hub method
             callback.apply(hub, $.makeArray(arguments));
         };
+    }
+
+    function updateHubState(hub, newState) {
+        var oldState = hub._.oldState;
+
+        if (!oldState) {
+            // First time updating client state, just copy it all over
+            $.extend(hub, newState);
+            hub._.oldState = $.extend({}, newState);
+            return;
+        } 
+
+        // Compare the old client state to current client state and preserve any changes
+        for (var key in newState) {
+            if (typeof (oldState[key]) !== "undefined" && oldState[key] === newState[key]) {
+                // Key is different between old state and new state thus it's changed locally
+                continue;
+            }
+            hub[key] = newState[key];
+            hub._.oldState[key] = newState[key];
+        }
     }
 
     function createHubProxies(instance, hubConnection) {
@@ -78,6 +98,11 @@
     function invoke(hub, methodName, args) {
         // Extract user callback from args
         var userCallback = args[args.length - 1], // last argument
+            callback,
+            connection = hub._.connection();
+
+        if ($.isFunction(userCallback)) {
+            // Replace user's callback with our own
             callback = function (result) {
                 // Update hub state from proxy state
                 $.extend(hub, hub._.proxy.state);
@@ -85,10 +110,19 @@
                     userCallback.call(hub, result);
                 }
             };
-
-        if ($.isFunction(userCallback)) {
-            // Replace user's callback with our own
             args = $.merge(args.splice(0, args.length - 1), [callback]);
+        }
+
+        if (!hub._.proxy) {
+            if (connection.state === signalR.connectionState.disconnected) {
+                // Connection hasn't been started yet
+                throw "SignalR: Connection must be started before data can be sent. Call .start() before .send()";
+            }
+
+            if (connection.state === signalR.connectionState.connecting) {
+                // Connection hasn't been started yet
+                throw "SignalR: Connection has not been fully initialized. Use .start().done() or .start().fail() to run logic after the connection has started.";
+            }
         }
 
         // Update proxy state from hub state
@@ -96,23 +130,6 @@
 
         return hub._.proxy.invoke.apply(hub._.proxy, $.merge([methodName], args));
     }
-
-    // Create hub signalR instance
-    /*
-    signalR.myDemoHub = {
-        _: {
-            hubName: "MyDemoHub",
-            ignoreMembers: ['serverMethod1', 'serverMethod2', 'namespace', 'ignoreMembers', 'callbacks'],
-            connection: function () { return signalR.hub; }
-        },
-        serverMethod1: function(p1, p2) {
-            return invoke(this, "ServerMethod1", $.makeArray(arguments));
-        },
-        serverMethod2: function(p1) {
-            return invoke(this, "ServerMethod2", $.makeArray(arguments));;
-        }
-    };
-    */
 
     signalR.chat = {
         _: {
@@ -141,7 +158,7 @@
     signalR.demo = {
         _: {
             hubName: 'demo',
-            ignoreMembers: ['addToGroups', 'complexArray', 'complexType', 'doSomethingAndCallError', 'dynamicInvoke', 'dynamicTask', 'genericTaskTypedAsPlain', 'genericTaskWithException', 'getValue', 'multipleCalls', 'overload', 'passingDynamicComplex', 'plainTask', 'readStateValue', 'setStateValue', 'simpleArray', 'taskWithException', 'testGuid', 'unsupportedOverload'],
+            ignoreMembers: ['addToGroups', 'complexArray', 'complexType', 'doSomethingAndCallError', 'dynamicInvoke', 'dynamicTask', 'genericTaskTypedAsPlain', 'genericTaskWithException', 'getValue', 'mispelledClientMethod', 'multipleCalls', 'overload', 'passingDynamicComplex', 'plainTask', 'readStateValue', 'setStateValue', 'simpleArray', 'taskWithException', 'testGuid', 'unsupportedOverload'],
             connection: function () { return signalR.hub; }
         },
 
@@ -245,6 +262,11 @@
             /// <summary>Calls the DynamicInvoke method on the server-side demo hub.&#10;Returns a jQuery.Deferred() promise.</summary>
             /// <param name="method" type="String">Server side type is System.String</param>
             return invoke(this, "DynamicInvoke", $.makeArray(arguments));
+        },
+
+        mispelledClientMethod: function () {
+            /// <summary>Calls the MispelledClientMethod method on the server-side demo hub.&#10;Returns a jQuery.Deferred() promise.</summary>
+            return invoke(this, "MispelledClientMethod", $.makeArray(arguments));
         }
     };
 

@@ -100,7 +100,7 @@ namespace SignalR.Client.Transports
 
             if (connection.MessageId != null)
             {
-                qsBuilder.Append("&messageId=" + Uri.EscapeDataString(connection.MessageId));
+                qsBuilder.Append("&messageId=" + connection.MessageId);
             }
 
             if (connection.Groups != null && connection.Groups.Any())
@@ -210,7 +210,7 @@ namespace SignalR.Client.Transports
 				timedOut = ((bool?)result["TimedOut"]) ?? false;
                 disconnected = (bool)result["Disconnect"];
 #else
-				timedOut = result.Value<bool>("TimedOut");
+                timedOut = result.Value<bool>("TimedOut");
                 disconnected = result.Value<bool>("Disconnect");
 #endif
 

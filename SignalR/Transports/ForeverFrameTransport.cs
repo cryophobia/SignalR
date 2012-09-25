@@ -1,5 +1,5 @@
-﻿using System.IO;
-using System.Text;
+﻿using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace SignalR.Transports
@@ -31,22 +31,25 @@ namespace SignalR.Transports
 
         public override void KeepAlive()
         {
-            OutputWriter.Write("<script>r(c, {});</script>");
-            OutputWriter.WriteLine();
-            OutputWriter.WriteLine();
-            OutputWriter.Flush();
+            var script = "<script>r(c, {});</script>\r\n";
+            Context.Response.WriteAsync(script).Catch();
         }
 
         public override Task Send(PersistentResponse response)
         {
-            OnSendingResponse(response);
+            var data = JsonSerializer.Stringify(response);
 
-            OutputWriter.Write("<script>r(c, ");
-            JsonSerializer.Stringify(response, OutputWriter);
-            OutputWriter.Write(");</script>\r\n");
-            OutputWriter.Flush();
+            OnSending(data);
 
-            return TaskAsyncHelper.Empty;
+            data = EscapeAnyInlineScriptTags(data);
+
+            var script = "<script>r(c, " + data + ");</script>\r\n";
+            if (_isDebug)
+            {
+                script += "<div>" + data + "</div>\r\n";
+            }
+
+            return Context.Response.WriteAsync(script);
         }
 
         protected override Task InitializeResponse(ITransportConnection connection)
@@ -55,45 +58,14 @@ namespace SignalR.Transports
                 .Then(initScript =>
                 {
                     Context.Response.ContentType = "text/html";
-                    OutputWriter.Write(initScript);
-                    OutputWriter.Flush();
+                    Context.Response.WriteAsync(initScript);
                 },
                 _initPrefix + Context.Request.QueryString["frameId"] + _initSuffix);
         }
 
-        private class TextWriterWrapper : TextWriter
+        private static string EscapeAnyInlineScriptTags(string input)
         {
-            private readonly TextWriter _writer;
-
-            public TextWriterWrapper(TextWriter writer)
-            {
-                _writer = writer;
-            }
-
-            public override Encoding Encoding
-            {
-                get { return _writer.Encoding; }
-            }
-
-            public override void Write(string value)
-            {
-                _writer.Write(EscapeAnyInlineScriptTags(value));
-            }
-
-            public override void WriteLine(string value)
-            {
-                _writer.Write(EscapeAnyInlineScriptTags(value));
-            }
-
-            public override void WriteLine()
-            {
-                _writer.WriteLine();
-            }
-
-            private static string EscapeAnyInlineScriptTags(string input)
-            {
-                return input.Replace("</script>", "</\"+\"script>");
-            }
+            return input.Replace("</script>", "</\"+\"script>");
         }
     }
 }

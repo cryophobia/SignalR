@@ -4,12 +4,10 @@ using SignalR.Infrastructure;
 
 namespace SignalR.Transports
 {
-    public abstract class ForeverTransport : TransportDisconnectBase, ITransport
+    public class ForeverTransport : TransportDisconnectBase, ITransport
     {
         private IJsonSerializer _jsonSerializer;
         private string _lastMessageId;
-
-        private const int MessageBufferSize = 10;
 
         public ForeverTransport(HostContext context, IDependencyResolver resolver)
             : this(context,
@@ -56,16 +54,6 @@ namespace SignalR.Transports
             }
         }
 
-        protected virtual void OnSendingResponse(PersistentResponse response)
-        {
-            HeartBeat.MarkConnection(this);
-
-            if (SendingResponse != null)
-            {
-                SendingResponse(response);
-            }
-        }
-
         protected static void OnReceiving(string data)
         {
             if (Receiving != null)
@@ -76,9 +64,6 @@ namespace SignalR.Transports
 
         // Static events intended for use when measuring performance
         public static event Action<string> Sending;
-
-        public static event Action<PersistentResponse> SendingResponse;
-
         public static event Action<string> Receiving;
 
         public Func<string, Task> Received { get; set; }
@@ -101,7 +86,7 @@ namespace SignalR.Transports
             }
             else if (IsAbortRequest)
             {
-                return Connection.Abort(ConnectionId);
+                return Connection.Abort();
             }
             else
             {
@@ -140,15 +125,22 @@ namespace SignalR.Transports
             return ProcessRequestCore(connection);
         }
 
-        public abstract Task Send(PersistentResponse response);
+        public virtual Task Send(PersistentResponse response)
+        {
+            var data = _jsonSerializer.Stringify(response);
+
+            OnSending(data);
+
+            return Context.Response.WriteAsync(data);
+        }
 
         public virtual Task Send(object value)
         {
-            JsonSerializer.Stringify(value, OutputWriter);
+            var data = _jsonSerializer.Stringify(value);
 
-            OutputWriter.Flush();
+            OnSending(data);
 
-            return TaskAsyncHelper.Empty;
+            return Context.Response.EndAsync(data);
         }
 
         protected virtual Task InitializeResponse(ITransportConnection connection)
@@ -189,69 +181,79 @@ namespace SignalR.Transports
                 {
                     postReceive();
                 }
+
+                InitializeResponse(connection).Catch();
             };
 
-            return InitializeResponse(connection)
-                    .Then((c, pr) => ProcessMessages(c, pr), connection, afterReceive);
+            return ProcessMessages(connection, afterReceive);
         }
 
         private Task ProcessMessages(ITransportConnection connection, Action postReceive = null)
         {
             var tcs = new TaskCompletionSource<object>();
-
-            Action endRequest = () =>
-            {
-                tcs.TrySetResult(null);
-                CompleteRequest();
-            };
-
-            ProcessMessages(connection, postReceive, endRequest);
-
+            ProcessMessagesImpl(tcs, connection, postReceive);
             return tcs.Task;
         }
 
-        private void ProcessMessages(ITransportConnection connection, Action postReceive, Action endRequest)
+        private void ProcessMessagesImpl(TaskCompletionSource<object> taskCompletetionSource, ITransportConnection connection, Action postReceive = null)
         {
-            IDisposable subscription = null;
-
-            // End the request if the connection end token is triggered
-            ConnectionEndToken.Register(() =>
+            if (!IsTimedOut && !IsDisconnected && IsAlive && !ConnectionEndToken.IsCancellationRequested)
             {
-                if (subscription != null)
+                // ResponseTask will either subscribe and wait for a signal then return new messages,
+                // or return immediately with messages that were pending
+                var receiveAsyncTask = LastMessageId == null
+                    ? connection.ReceiveAsync(ConnectionEndToken)
+                    : connection.ReceiveAsync(LastMessageId, ConnectionEndToken);
+
+                if (postReceive != null)
                 {
-                    subscription.Dispose();
+                    postReceive();
                 }
-            });
 
-            subscription = connection.Receive(LastMessageId, response =>
-            {
-                response.TimedOut = IsTimedOut;
-
-                if (response.Disconnect ||
-                    response.TimedOut ||
-                    response.Aborted ||
-                    ConnectionEndToken.IsCancellationRequested)
+                receiveAsyncTask.Then(response =>
                 {
-                    if (response.Aborted)
+                    LastMessageId = response.MessageId;
+
+                    response.TimedOut = IsTimedOut;
+
+                    // If the response has the Disconnect flag, just send the response and exit the loop,
+                    // the server thinks connection is gone. Otherwse, send the response then re-enter the loop
+                    Task sendTask = Send(response);
+                    if (response.Disconnect || response.TimedOut || response.Aborted)
                     {
-                        // If this was a clean disconnect raise the event.
-                        OnDisconnect();
+                        if (response.Aborted)
+                        {
+                            // If this was a clean disconnect raise the event.
+                            OnDisconnect();
+                        }
+
+                        // Signal the tcs when the task is done
+                        return sendTask.Then(tcs => tcs.SetResult(null), taskCompletetionSource);
                     }
 
-                    endRequest();
-                    return TaskAsyncHelper.False;
-                }
-                else
+                    // Continue the receive loop
+                    return sendTask.Then((conn) => ProcessMessagesImpl(taskCompletetionSource, conn), connection);
+                })
+                .ContinueWith(t =>
                 {
-                    return Send(response).Then(() => TaskAsyncHelper.True);
-                }
-            },
-            MessageBufferSize);
+                    if (t.IsCanceled)
+                    {
+                        taskCompletetionSource.SetCanceled();
+                    }
+                    else if (t.IsFaulted)
+                    {
+                        taskCompletetionSource.SetException(t.Exception);
+                    }
+                },
+                TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.NotOnRanToCompletion);
 
-            if (postReceive != null)
-            {
-                postReceive();
+                // Stop execution here
+                return;
             }
+
+            taskCompletetionSource.SetResult(null);
+            CompleteRequest();
+            return;
         }
     }
 }
